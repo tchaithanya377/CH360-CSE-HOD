@@ -77,9 +77,26 @@ const HODApproval = () => {
           const fetchCourseNameById = async (courseId) => {
             if (!courseId) return "Unknown";
             try {
-              const courseDocRef = doc(db, `/courses/III/A/sem1/courseDetails/${courseId}`);
-              const docSnap = await getDoc(courseDocRef);
-              return docSnap.exists() ? docSnap.data().courseName || "Unknown" : "Unknown";
+              // First try to fetch from the specific year/section/semester path
+              const courseDocRef = doc(db, "courses", year, section, semester, "courseDetails", courseId);
+              let docSnap = await getDoc(courseDocRef);
+
+              // If not found in specific path, try the general courses collection
+              if (!docSnap.exists()) {
+                const generalCourseRef = doc(db, "courses", courseId);
+                docSnap = await getDoc(generalCourseRef);
+              }
+
+              if (docSnap.exists()) {
+                return docSnap.data().courseName || "Unknown";
+              } else {
+                console.error("Course not found for ID:", courseId);
+                console.log("Attempted paths:", 
+                  `courses/${year}/${section}/${semester}/courseDetails/${courseId}`,
+                  `courses/${courseId}`
+                );
+                return "Unknown";
+              }
             } catch (error) {
               console.error("Error fetching course name:", error);
               return "Unknown";
@@ -168,170 +185,211 @@ const HODApproval = () => {
 
 
   // Filter students based on status and search query
-  const filteredStudents = students.filter((student) => {
-    const isStatusMatch = statusFilter ? student.hod.status === statusFilter : true;
-    const isSearchMatch =
-      student.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.rollNo.includes(searchQuery);
-    return isStatusMatch && isSearchMatch;
-  });
+  const filteredStudents = students
+    .filter((student) => {
+      const isStatusMatch = statusFilter ? student.hod.status === statusFilter : true;
+      const isSearchMatch =
+        student.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        student.rollNo.includes(searchQuery);
+      return isStatusMatch && isSearchMatch;
+    })
+    .sort((a, b) => {
+      // Extract numbers from roll numbers for proper sorting
+      const numA = parseInt(a.rollNo.replace(/\D/g, ''));
+      const numB = parseInt(b.rollNo.replace(/\D/g, ''));
+      return numA - numB;
+    });
 
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <h1 className="text-3xl font-bold text-blue-700 mb-6 text-center">HOD Approval</h1>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">
+          HOD Approval Dashboard
+        </h1>
 
-
-      {/* Filters */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <select value={year} onChange={(e) => setYear(e.target.value)} className="border p-2 rounded">
-          <option value="">Select Year</option>
-          {years.map((yr) => (
-            <option key={yr} value={yr}>
-              {yr}
-            </option>
-          ))}
-        </select>
-        <select value={section} onChange={(e) => setSection(e.target.value)} className="border p-2 rounded">
-          <option value="">Select Section</option>
-          {sections.map((sec) => (
-            <option key={sec} value={sec}>
-              {sec}
-            </option>
-          ))}
-        </select>
-        <select value={semester} onChange={(e) => setSemester(e.target.value)} className="border p-2 rounded">
-          <option value="">Select Semester</option>
-          {semesters.map((sem) => (
-            <option key={sem} value={sem}>
-              {sem}
-            </option>
-          ))}
-        </select>
-      </div>
-
-
-      {/* Status Filter */}
-      <div className="mb-4">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="border p-2 rounded"
-        >
-          <option value="">Select Status</option>
-          <option value="Pending">Pending</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-      </div>
-
-
-      {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by name or roll number"
-          className="border p-2 rounded w-full"
-        />
-      </div>
-
-
-      {/* Select All */}
-      <div className="mb-4">
-        <input
-          type="checkbox"
-          checked={selectAll}
-          onChange={handleSelectAll}
-          className="mr-2"
-        />
-        <label>Select All</label>
-      </div>
-
-
-      {/* Table */}
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <>
-          <table className="table-auto w-full border">
-            <thead className="bg-blue-100">
-              <tr>
-                <th className="border px-2 py-2">Select</th>
-                <th className="border px-2 py-2">Roll No</th>
-                <th className="border px-2 py-2">Name</th>
-                <th className="border px-2 py-2">Courses Faculty</th>
-                <th className="border px-2 py-2">Coordinators</th>
-                <th className="border px-2 py-2">Mentor</th>
-                <th className="border px-2 py-2">HOD Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.map((student) => (
-                <tr key={student.id} className="hover:bg-gray-50">
-                  <td className="border px-2 py-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedStudents.includes(student.id)}
-                      onChange={() => handleStudentSelect(student.id)}
-                    />
-                  </td>
-                  <td className="border px-2 py-2">{student.rollNo}</td>
-                  <td className="border px-2 py-2">{student.studentName}</td>
-                  <td className="border px-2 py-2">
-                    {student.coursesFaculty.map((cf, i) => (
-                      <div key={i} className="text-sm">
-                        {cf.courseName} - {cf.facultyName} ({cf.status})
-                      </div>
-                    ))}
-                  </td>
-                  <td className="border px-2 py-2">
-                    {student.coordinators.map((c, i) => (
-                      <div key={i} className="text-sm">
-                        {c.name} - {c.status}
-                      </div>
-                    ))}
-                  </td>
-                  <td className="border px-2 py-2">{student.mentorName}</td>
-                  <td className="border px-2 py-2">
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-white ${
-                        student.hod.status === "Accepted"
-                          ? "bg-green-500"
-                          : student.hod.status === "Rejected"
-                          ? "bg-red-500"
-                          : "bg-yellow-500"
-                      }`}
-                    >
-                      {student.hod.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-
-          {/* Accept/Reject Actions */}
-          {selectedStudents.length > 0 && (
-            <div className="mt-4">
-              <button
-                className="bg-green-500 text-white px-3 py-1 rounded mr-2"
-                onClick={() => updateHODStatus(selectedStudents, "Accepted")}
+        {/* Filters Section */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-700 mb-4">Filters</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Year</label>
+              <select 
+                value={year} 
+                onChange={(e) => setYear(e.target.value)} 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                Approve
-              </button>
-              <button
-                className="bg-red-500 text-white px-3 py-1 rounded"
-                onClick={() => updateHODStatus(selectedStudents, "Rejected")}
-              >
-                Reject
-              </button>
+                <option value="">Select Year</option>
+                {years.map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
             </div>
-          )}
-        </>
-      )}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Section</label>
+              <select 
+                value={section} 
+                onChange={(e) => setSection(e.target.value)} 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select Section</option>
+                {sections.map((sec) => (
+                  <option key={sec} value={sec}>{sec}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Semester</label>
+              <select 
+                value={semester} 
+                onChange={(e) => setSemester(e.target.value)} 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select Semester</option>
+                {semesters.map((sem) => (
+                  <option key={sem} value={sem}>{sem}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Status</option>
+                <option value="Pending">Pending</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Section */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="w-full md:w-1/2">
+            <label className="block text-sm font-medium text-gray-600 mb-2">Search Students</label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or roll number"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Table Section */}
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={selectAll}
+                          onChange={handleSelectAll}
+                          className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <span>Select All</span>
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Roll No</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Courses & Faculty</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Coordinators</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mentor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredStudents.map((student) => (
+                    <tr key={student.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudents.includes(student.id)}
+                          onChange={() => handleStudentSelect(student.id)}
+                          className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{student.rollNo}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{student.studentName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {student.coursesFaculty.map((cf, i) => (
+                          <div key={i} className="mb-1 p-2 bg-gray-50 rounded">
+                            <span className="font-medium">{cf.courseName}</span>
+                            <br />
+                            <span className="text-gray-600">{cf.facultyName}</span>
+                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                              cf.status === "Accepted" ? "bg-green-100 text-green-800" :
+                              cf.status === "Rejected" ? "bg-red-100 text-red-800" :
+                              "bg-yellow-100 text-yellow-800"
+                            }`}>
+                              {cf.status}
+                            </span>
+                          </div>
+                        ))}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {student.coordinators.map((c, i) => (
+                          <div key={i} className="mb-1 p-2 bg-gray-50 rounded">
+                            <span className="font-medium">{c.name}</span>
+                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                              c.status === "Accepted" ? "bg-green-100 text-green-800" :
+                              c.status === "Rejected" ? "bg-red-100 text-red-800" :
+                              "bg-yellow-100 text-yellow-800"
+                            }`}>
+                              {c.status}
+                            </span>
+                          </div>
+                        ))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{student.mentorName}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 text-xs rounded-full ${
+                          student.hod.status === "Accepted" ? "bg-green-100 text-green-800" :
+                          student.hod.status === "Rejected" ? "bg-red-100 text-red-800" :
+                          "bg-yellow-100 text-yellow-800"
+                        }`}>
+                          {student.hod.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        {selectedStudents.length > 0 && (
+          <div className="mt-6 flex justify-end gap-4">
+            <button
+              onClick={() => updateHODStatus(selectedStudents, "Accepted")}
+              className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+            >
+              Approve Selected
+            </button>
+            <button
+              onClick={() => updateHODStatus(selectedStudents, "Rejected")}
+              className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+            >
+              Reject Selected
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
